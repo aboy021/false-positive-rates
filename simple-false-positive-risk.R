@@ -1,33 +1,74 @@
 rm(list = ls()) # clear all vars from the current workspace
 
-do_test <- function(placebo=0.5, treatment=0.5){
-    test_1 <- rbinom(1,100,placebo)
-    test_1_minus100 <- 100 - test_1
-    dead_alive_1 <- c(test_1, test_1_minus100)
-    test_2 <- rbinom(1,100,treatment)
-    test_2_minus100 <- 100 - test_2
-    dead_alive_2 <- c(test_2, test_2_minus100)
-    matrix_dead_alive <- rbind(dead_alive_1,dead_alive_2)
-    cs <- chisq.test(matrix_dead_alive)
-    return(cs$p.value)
+setwd("~/GitHub/false-positive-rates")
+# if(!exists("monteCarloFisher", mode="function")) 
+    sourceCpp("monte-carlo-fisher.cpp")
+
+a <- c(0.1)
+simTrials <- function (
+    monteCarloSims = 10000L,
+    participantsPerArm = 100L,
+    baselineRisk = 0.5,
+    absoluteRR = 0.1) {
+    
+    ctrlOutcomes <- rbinom(monteCarloSims, participantsPerArm, baselineRisk)
+    rxRisk <- baselineRisk - absoluteRR
+    
+    df <- monteCarloFisher(alloc = participantsPerArm,
+                           outcomes = cbind(
+                               rbinom(monteCarloSims, participantsPerArm, baselineRisk), # no dif interv
+                               ctrlOutcomes, # control group
+                               rbinom(monteCarloSims, participantsPerArm, rxRisk), # working Rx
+                               ctrlOutcomes))
+                                            
+    
+    sub <- paste0("2 arms both risk:", baselineRisk)
+    hist(df$p.1, sub=sub)
+    hist(df$p.1[df$p.1 < 0.1], sub=sub)
+    
+    sub <- paste0("control:", baselineRisk, "; intervention:", rxRisk)
+    hist(df$p.2, sub=sub)
+    hist(df$p.2[df$p.2 < 0.1], sub=sub)
+    
+    type1_tail1 <- sum(df$or.1 < 1.0 & df$p.1 < 0.05)
+    type1_tail2 <- sum(df$or.1 > 1.0 & df$p.1 < 0.05)
+    
+    type2 <- sum(df$p.2 >= 0.05)
+    type3 <- sum(df$or.2 > 1.0 & df$p.2 < 0.05)
+    
+    a <<- df
+    
+    resultOut <- function(text, count){
+        return(paste0("\n\t", text, ": ", count, " (", 100 * count / monteCarloSims, "%)"))
+    }
+    cat("Simulated trials:", prettyNum(monteCarloSims, big.mark = " "),
+        "\nAllocations per Trial Arm:", participantsPerArm,
+        "\n-------------------------",
+        "\nEqual Risks (", baselineRisk, "):", 
+        resultOut("type 1 errors made: tail 1", type1_tail1),
+        resultOut("type 1 errors made: tail 2", type1_tail2),
+        resultOut("total type 1 errors made (FP)", type1_tail1 + type1_tail1),
+        resultOut("includes type 1 with p < 0.02", sum(df$p.1 < 0.02)),
+        "\nRisk Reduction (", sub, "):",
+        resultOut("type 2 errors made", type2),
+        resultOut("type 3 errors made", type3),
+        resultOut("type 2 or 3 errors", type2 + type3),
+        resultOut("no error (TP)", monteCarloSims - type2 - type3),"\n")
+    
+    cat("\n\n\nPoint effect estimate when type 1 error encountered (Odds Ratio) truth = 1.0:\n")
+    print(summary(df$or.1[which(df$p.1 < 0.05 & df$or.1 > 1.0)]))
+    print(summary(df$or.1[which(df$p.1 < 0.05 & df$or.1 < 1.0)]))
+    cat("\nPoint effect estimate when no error (Odds Ratio) truth = ",
+        rxRisk * (1 - baselineRisk) / (baselineRisk * (1 - rxRisk)), 
+        ":\n")
+    print(summary(df$or.2[which(df$p.2 < 0.05 & df$or.2 < 1.0)]))
+    cat("confidence intervals of the odds ratios (lower then upper bounds)\n")
+    print(summary(df$ci_lb.2[which(df$p.2 < 0.05 & df$or.2 < 1.0)]))
+    print(summary(df$ci_ub.2[which(df$p.2 < 0.05 & df$or.2 < 1.0)]))
 }
 
-is_significant <- function(p_value){
-    return(p_value >= 0.03 && p_value <= 0.05)
-}
-
-placebo_prob = 0.5
-treatment_prob = 0.6
-
-placebo_vs_placebo <- replicate(100000, do_test(placebo_prob,placebo_prob))
-treatment_vs_placebo <- replicate(100000, do_test(placebo_prob,treatment_prob))
-
-false_positives = length(Filter(is_significant, placebo_vs_placebo))
-true_positives = length(Filter(is_significant, treatment_vs_placebo))
-
-cat("False Positives: ", false_positives, "\n",
-    "True Positives: ", true_positives, "\n",
-    "False Positive Risk: ", false_positives / (true_positives + false_positives), "\n")
-
-> hist(placebo_vs_placebo)
-> hist(treatment_vs_placebo)
+simTrials(
+    monteCarloSims = 1000000L,
+    participantsPerArm = 200L,
+    baselineRisk = 0.5,
+    absoluteRR = 0.1)
