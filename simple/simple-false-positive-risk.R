@@ -94,6 +94,8 @@ negative_predictive_value = true_negatives / (true_negatives + false_negatives)
 # False negative risk (FNR): Proportion of negative trials that are false
 false_negative_risk = false_negatives / (true_negatives + false_negatives)
 
+# Power: probability of a positive test given the hypothesis is true
+power = true_positives / num_simulations_control_vs_treatment
 
 ###################
 # Display Results #
@@ -109,7 +111,9 @@ cat("\n",
 "positive_predictive_value:", "\t", positive_predictive_value, "\n",
 "false_positive_risk:", "\t", false_positive_risk, "\n",
 "negative_predictive_value:", "\t", negative_predictive_value, "\n",
-"false_negative_risk:", "\t", false_negative_risk, "\n\n")
+"false_negative_risk:", "\t", false_negative_risk, "\n",
+"power:", "\t", power, "\n",
+"\n\n")
 
 
 ############
